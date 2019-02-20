@@ -60,6 +60,8 @@ github.com/google/go-github v17.0.0+incompatible/go.mod h1:zLgOLi98H3fifZn+44m+u
 github.com/google/go-querystring v1.0.0/go.mod h1:odCYkC5MyYFN7vkCjXpyrEuKhc/BUO6wN/zVPAxq5ck=
 github.com/google/go-tpm v0.1.0 h1:fJdlawx1sgeNE2eMX31RFAO/ALa0f3pWEYJvqS/9XZg=
 github.com/google/go-tpm v0.1.0/go.mod h1:OGEdc1XfzTyNEQyahgeXVq+E0lMq3Vu/Y3bT9EfpRnE=
+github.com/google/go-tpm-tools v0.0.0-20190131232102-89d1c95730e5 h1:ZP7wPiscXdeco0DkjnSLxwTksyFLG+w/sVFYZHh1sLQ=
+github.com/google/go-tpm-tools v0.0.0-20190131232102-89d1c95730e5/go.mod h1:ApmLTU8fd5JJJ4J67y9sV16nOTR00GW2OabMwk7kSnE=
 github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf h1:+RRA9JqSOZFfKrOeqr2z77+8R2RKyh8PG66dcu1V0ck=
 github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf/go.mod h1:HP5RmnzzSNb993RKQDq4+1A4ia9nllfqcQFTQJedwGI=
 github.com/google/martian v2.1.0+incompatible/go.mod h1:9I4somxYTbIHy5NJKHRl3wXiIaQGbYVAs8BPL6v8lEs=
@@ -279,7 +281,7 @@ k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93 h1:tT6oQBi0qwLbbZSfDkdIsb
 k8s.io/apimachinery v0.0.0-20181127025237-2b1284ed4c93/go.mod h1:ccL7Eh7zubPUSh9A3USN90/OzHNSVN6zxzde07TDCL0=
 k8s.io/apiserver v0.0.0-20181204001702-9caa0299108f h1:sJANJfNOLUaOuiYch6G+MhdG+WaU/NZzUuoTmvqdqHc=
 k8s.io/apiserver v0.0.0-20181204001702-9caa0299108f/go.mod h1:6bqaTSOSJavUIXUtfaR9Os9JtTCm8ZqH2SUl2S60C4w=
-k8s.io/client-go v10.0.0+incompatible h1:F1IqCqw7oMBzDkqlcBymRq1450wD0eNqLE9jzUrIi34=
+k8s.io/client-go v10.0.0+incompatible h1:h3fciHPG0O5QEzATTFoRw/YGtDsU6pxrMrAhxiTtcq0=
 k8s.io/client-go v10.0.0+incompatible/go.mod h1:7vJpHMYJwNQCWgzmNV+VYUl1zCObLyodBc8nIyt8L5s=
 k8s.io/cloud-provider v0.0.0-20181204010209-aba175aabd87 h1:6TrMFhYw6lz6dTRIfRYxA1F5/nY9+MRmllJ2xp8aTYw=
 k8s.io/cloud-provider v0.0.0-20181204010209-aba175aabd87/go.mod h1:LlIffnLBu+GG7d4ppPzC8UnA1Ex8S+ntmSRVsnr7Xy4=
@@ -289,7 +291,7 @@ k8s.io/klog v0.1.0 h1:I5HMfc/DtuVaGR1KPwUrTc476K8NCqNBldC7H4dYEzk=
 k8s.io/klog v0.1.0/go.mod h1:Gq+BEi5rUBO/HRz0bTSXDUcqjScdoY3a9IHpCEIOOfk=
 k8s.io/kube-openapi v0.0.0-20190115222348-ced9eb3070a5 h1:leiGEauB5/1TE6nQQ9flpPDz6oEEvPLVuj4B4J40dfA=
 k8s.io/kube-openapi v0.0.0-20190115222348-ced9eb3070a5/go.mod h1:BXM9ceUBTj2QnfH2MK1odQs778ajze1RxcmP6S8RVVc=
-k8s.io/kubernetes v1.13.0 h1:qTfB+u5M92k2fCCCVP2iuhgwwSOv1EkAkvQY1tQODD8=
+k8s.io/kubernetes v1.13.0 h1:zbeFrahfJsZdJhzXAQWcXXbrlXqOyzH6ZsS83nyZIlE=
 k8s.io/kubernetes v1.13.0/go.mod h1:ocZa8+6APFNC2tX1DZASIbocyYT5jHzqFVsY5aoB7Jk=
 k8s.io/utils v0.0.0-20190125223540-2b1ea019a370 h1:yEB4DSwzE2m/FlxQarFROxru0dYDy60cOVZuRLNyUeQ=
 k8s.io/utils v0.0.0-20190125223540-2b1ea019a370/go.mod h1:8k8uAuAQ0rXslZKaEWd0c3oVhZz7sSzSiPnVZayjIX0=
