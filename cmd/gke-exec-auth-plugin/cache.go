@@ -198,7 +198,7 @@ func (c *cache) sealAndWriteTmpKey(keyPEM []byte) error {
 		return fmt.Errorf("PEM encoding sealed key PEM parts: %v", err)
 	}
 
-	return ioutil.WriteFile(filepath.Join(c.directory, tmpSealedKeyFileName), keyPEM, 0600)
+	return ioutil.WriteFile(filepath.Join(c.directory, tmpSealedKeyFileName), sealedKeyPEM, 0600)
 }
 
 // validPEMKey returns true if key contains a valid PEM-encoded private key. If
