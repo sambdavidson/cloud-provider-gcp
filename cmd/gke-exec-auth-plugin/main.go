@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -22,12 +23,13 @@ const (
 )
 
 var (
-	mode = flag.String("mode", modeTPM, "Plugin mode, one of ['tpm', 'vmid', 'alt-token'].")
+	mode = flag.String("mode", modeTPM, "Plugin mode, one of ['tpm', 'vmid']")
 	// VMID token flags.
 	audience = flag.String("audience", "", "Audience field of for the VM ID token. Must be a URI.")
 	// TPM flags.
 	cacheDir = flag.String("cache-dir", "/var/lib/kubelet/pki", "Path to directory to store key and certificate.")
-	tpmPath  = flag.String("tpm-path", "/dev/tpm0", "path to a TPM character device or socket.")
+	tpmPath  = flag.String("tpm-path", "/dev/tpm0", "path to a TPM character device or socket")
+	pcr      = flag.Int("pcr", 7, "PCR to seal data to. Must be within [0, 23].")
 
 	altTokenURL  = flag.String("alt-token-url", "", "URL to token endpoint.")
 	altTokenBody = flag.String("alt-token-body", "", "Body of token request.")
@@ -52,6 +54,11 @@ func init() {
 func main() {
 	flag.Parse()
 
+	if *pcr < 0 || *pcr > 23 {
+		fmt.Fprintf(os.Stderr, "Invalid flag 'pcr': value %d is out of range", *pcr)
+		os.Exit(1)
+	}
+
 	var key, cert []byte
 	var token string
 	var err error
@@ -67,7 +74,13 @@ func main() {
 		}
 		token = "vmid-" + token
 	case modeTPM:
-		key, cert, err = getKeyCert(*cacheDir, requestCertificate)
+		tpm, err := openTPM(*tpmPath)
+		if err != nil {
+			klog.Exitf("failed opening TPM device: %v", err)
+		}
+		defer tpm.close()
+
+		key, cert, err = (&cache{*cacheDir, requestCertificate, tpm}).keyCert()
 		if err != nil {
 			klog.Exit(err)
 		}

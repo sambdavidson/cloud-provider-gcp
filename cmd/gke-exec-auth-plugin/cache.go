@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -13,14 +14,18 @@ import (
 	"reflect"
 	"time"
 
-	"k8s.io/klog"
 	"k8s.io/client-go/util/cert"
+	"k8s.io/klog"
 )
 
 const (
-	certFileName   = "kubelet-client.crt"
-	keyFileName    = "kubelet-client.key"
-	tmpKeyFileName = "kubelet-client.key.tmp"
+	certFileName         = "kubelet-client.crt"
+	sealedKeyFileName    = "kubelet-client.key.sealed"
+	tmpSealedKeyFileName = "kubelet-client.key.sealed.tmp"
+
+	// PEM encoded type for the private and public bits of a sealed key.
+	pemSealedPrivateType = "SEALED PRIVATE"
+	pemSealedPublicType  = "SEALED PUBLIC"
 
 	// Minimum age of existing certificate before triggering rotation.
 	// Assuming no rotation errors, this is cert rotation period.
@@ -32,16 +37,28 @@ const (
 	validityLeeway = 5 * time.Minute
 )
 
-type requestCertFn func([]byte) ([]byte, error)
+type requestCertFn func(tpmDevice, []byte) ([]byte, error)
 
-func getKeyCert(dir string, requestCert requestCertFn) ([]byte, []byte, error) {
-	oldKey, oldCert, ok := getExistingKeyCert(dir)
+type cache struct {
+	directory   string
+	requestCert requestCertFn
+	tpm         tpmDevice
+}
+
+func (c *cache) keyCert() ([]byte, []byte, error) {
+	tpm, err := openTPM(*tpmPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed opening TPM device: %v", err)
+	}
+	defer tpm.close()
+
+	oldKey, oldCert, ok := c.existingKeyCert()
 	if ok {
 		klog.Info("re-using cached key and certificate")
 		return oldKey, oldCert, nil
 	}
 
-	newKey, newCert, err := getNewKeyCert(dir, requestCert)
+	newKey, newCert, err := c.newKeyCert()
 	if err != nil {
 		if len(oldKey) == 0 || len(oldCert) == 0 {
 			return nil, nil, err
@@ -53,27 +70,79 @@ func getKeyCert(dir string, requestCert requestCertFn) ([]byte, []byte, error) {
 	return newKey, newCert, nil
 }
 
-func getNewKeyCert(dir string, requestCert requestCertFn) ([]byte, []byte, error) {
-	keyPEM, err := getTempKeyPEM(dir)
+func (c *cache) existingKeyCert() ([]byte, []byte, bool) {
+	keyPEM, err := c.readSealedKey(sealedKeyFileName)
+	if err != nil {
+		klog.Errorf("failed reading existing private key: %v", err)
+		return nil, nil, false
+	}
+	certPEM, err := c.readCert()
+	if err != nil {
+		klog.Errorf("failed reading existing certificate: %v", err)
+		return nil, nil, false
+	}
+	// Check cert expiration.
+	certRaw, _ := pem.Decode(certPEM)
+	if certRaw == nil {
+		klog.Error("failed parsing existing cert")
+		return nil, nil, false
+	}
+	parsedCert, err := x509.ParseCertificate(certRaw.Bytes)
+	if err != nil {
+		klog.Errorf("failed parsing existing cert: %v", err)
+		return nil, nil, false
+	}
+	if !validPEMKey(keyPEM, parsedCert) {
+		klog.Error("existing private key is invalid or doesn't match existing certificate")
+		return nil, nil, false
+	}
+	age := time.Now().Sub(parsedCert.NotBefore)
+	remaining := parsedCert.NotAfter.Sub(time.Now())
+	// Note: case order matters. Always check outside of expiry bounds first
+	// and put cases that return non-nil key/cert at the bottom.
+	switch {
+	case remaining < responseExpiry:
+		klog.Infof("existing cert expired or will expire in <%v, requesting new one", responseExpiry)
+		return nil, nil, false
+	case age+validityLeeway < 0:
+		klog.Warningf("existing cert not valid yet, requesting new one")
+		return nil, nil, false
+	case age < rotationThreshold:
+		return keyPEM, certPEM, true
+	default:
+		// Existing key/cert can still be reused but try to rotate.
+		klog.Infof("existing cert is %v old, requesting new one", age)
+		return keyPEM, certPEM, false
+	}
+}
+
+func (c *cache) newKeyCert() ([]byte, []byte, error) {
+	keyPEM, err := c.tempKeyPEM()
 	if err != nil {
 		return nil, nil, fmt.Errorf("trying to get private key: %v", err)
 	}
+	if err = c.sealAndWriteTmpKey(keyPEM); err != nil {
+		return nil, nil, fmt.Errorf("writing temporary key PEM: %v", err)
+	}
 
 	klog.Info("requesting new certificate")
-	certPEM, err := requestCert(keyPEM)
+	certPEM, err := c.requestCert(c.tpm, keyPEM)
 	if err != nil {
 		return nil, nil, err
 	}
 	klog.Info("CSR approved, received certificate")
 
-	if err := writeKeyCert(dir, keyPEM, certPEM); err != nil {
+	if err = c.writeCert(certPEM); err != nil {
+		return nil, nil, err
+	}
+	if err := os.Rename(filepath.Join(c.directory, tmpSealedKeyFileName), filepath.Join(c.directory, sealedKeyFileName)); err != nil {
 		return nil, nil, err
 	}
 	return keyPEM, certPEM, nil
 }
 
-func getTempKeyPEM(dir string) ([]byte, error) {
-	keyPEM, err := ioutil.ReadFile(filepath.Join(dir, tmpKeyFileName))
+func (c *cache) tempKeyPEM() ([]byte, error) {
+	keyPEM, err := c.readSealedKey(tmpSealedKeyFileName)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("trying to read temp private key: %v", err)
 	}
@@ -92,11 +161,44 @@ func getTempKeyPEM(dir string) ([]byte, error) {
 		return nil, err
 	}
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: cert.ECPrivateKeyBlockType, Bytes: keyBytes})
-	// Write private key into temporary file to reuse in case of failure.
-	if err := ioutil.WriteFile(filepath.Join(dir, tmpKeyFileName), keyPEM, 0600); err != nil {
-		return nil, fmt.Errorf("failed to store new private key to temporary file: %v", err)
-	}
 	return keyPEM, nil
+}
+
+func (c *cache) readCert() ([]byte, error) {
+	return ioutil.ReadFile(filepath.Join(c.directory, certFileName))
+}
+func (c *cache) writeCert(certPEM []byte) error {
+	return ioutil.WriteFile(filepath.Join(c.directory, certFileName), certPEM, os.FileMode(0644))
+}
+
+// readSealedKey reads the sealed key with keyName and returns the
+// unsealed key []byte.
+func (c *cache) readSealedKey(keyName string) ([]byte, error) {
+	sealedKeyPEM, err := ioutil.ReadFile(filepath.Join(c.directory, keyName))
+	if err != nil {
+		return nil, fmt.Errorf("reading sealed key PEM: %v", err)
+	}
+	privateBytes, publicBytes, err := pemDecodeSealedData(sealedKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("PEM decoding sealed key PEM parts: %v", err)
+	}
+	return c.tpm.unseal(privateBytes, publicBytes)
+}
+
+// sealAndWriteKey seals []byte key and writes the sealed key to the cache's
+// directory.
+func (c *cache) sealAndWriteTmpKey(keyPEM []byte) error {
+	// Write private key into temporary file to reuse in case of failure.
+	privateBytes, publicBytes, err := c.tpm.seal(keyPEM)
+	if err != nil {
+		return fmt.Errorf("sealing temporary key PEM: %v", err)
+	}
+	sealedKeyPEM, err := pemEncodeSealedData(privateBytes, publicBytes)
+	if err != nil {
+		return fmt.Errorf("PEM encoding sealed key PEM parts: %v", err)
+	}
+
+	return ioutil.WriteFile(filepath.Join(c.directory, tmpSealedKeyFileName), keyPEM, 0600)
 }
 
 // validPEMKey returns true if key contains a valid PEM-encoded private key. If
@@ -119,55 +221,31 @@ func validPEMKey(key []byte, cert *x509.Certificate) bool {
 	return reflect.DeepEqual(cert.PublicKey, pk.Public())
 }
 
-func getExistingKeyCert(dir string) ([]byte, []byte, bool) {
-	key, err := ioutil.ReadFile(filepath.Join(dir, keyFileName))
-	if err != nil {
-		klog.Errorf("failed reading existing private key: %v", err)
-		return nil, nil, false
+func pemEncodeSealedData(private, public []byte) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := pem.Encode(buf, &pem.Block{
+		Type:  pemSealedPrivateType,
+		Bytes: private,
+	}); err != nil {
+		return nil, err
 	}
-	cert, err := ioutil.ReadFile(filepath.Join(dir, certFileName))
-	if err != nil {
-		klog.Errorf("failed reading existing certificate: %v", err)
-		return nil, nil, false
+	if err := pem.Encode(buf, &pem.Block{
+		Type:  pemSealedPublicType,
+		Bytes: public,
+	}); err != nil {
+		return nil, err
 	}
-	// Check cert expiration.
-	certRaw, _ := pem.Decode(cert)
-	if certRaw == nil {
-		klog.Error("failed parsing existing cert")
-		return nil, nil, false
-	}
-	parsedCert, err := x509.ParseCertificate(certRaw.Bytes)
-	if err != nil {
-		klog.Errorf("failed parsing existing cert: %v", err)
-		return nil, nil, false
-	}
-	if !validPEMKey(key, parsedCert) {
-		klog.Error("existing private key is invalid or doesn't match existing certificate")
-		return nil, nil, false
-	}
-	age := time.Now().Sub(parsedCert.NotBefore)
-	remaining := parsedCert.NotAfter.Sub(time.Now())
-	// Note: case order matters. Always check outside of expiry bounds first
-	// and put cases that return non-nil key/cert at the bottom.
-	switch {
-	case remaining < responseExpiry:
-		klog.Infof("existing cert expired or will expire in <%v, requesting new one", responseExpiry)
-		return nil, nil, false
-	case age+validityLeeway < 0:
-		klog.Warningf("existing cert not valid yet, requesting new one")
-		return nil, nil, false
-	case age < rotationThreshold:
-		return key, cert, true
-	default:
-		// Existing key/cert can still be reused but try to rotate.
-		klog.Infof("existing cert is %v old, requesting new one", age)
-		return key, cert, false
-	}
+	return buf.Bytes(), nil
 }
 
-func writeKeyCert(dir string, key, cert []byte) error {
-	if err := os.Rename(filepath.Join(dir, tmpKeyFileName), filepath.Join(dir, keyFileName)); err != nil {
-		return err
+func pemDecodeSealedData(enc []byte) ([]byte, []byte, error) {
+	privateBlock, rest := pem.Decode(enc)
+	if privateBlock == nil || privateBlock.Type != pemSealedPrivateType {
+		return nil, nil, fmt.Errorf("first decoded PEM block is not type %s: %s", pemSealedPrivateType, enc)
 	}
-	return ioutil.WriteFile(filepath.Join(dir, certFileName), cert, os.FileMode(0644))
+	publicBlock, _ := pem.Decode(rest)
+	if publicBlock == nil || publicBlock.Type != pemSealedPublicType {
+		return nil, nil, fmt.Errorf("second decoded PEM block is not type %s: %s", pemSealedPublicType, rest)
+	}
+	return privateBlock.Bytes, publicBlock.Bytes, nil
 }

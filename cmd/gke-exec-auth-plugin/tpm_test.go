@@ -9,14 +9,17 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"k8s.io/cloud-provider-gcp/pkg/nodeidentity"
@@ -103,8 +106,10 @@ func (t *fakeTPM) loadExternal(pub tpm2.Public, priv tpm2.Private) (tpmutil.Hand
 	t.nextHandle++
 	return h, nil
 }
-func (t *fakeTPM) flush(h tpmutil.Handle) { delete(t.loaded, h) }
-func (t *fakeTPM) close() error           { return nil }
+func (t *fakeTPM) seal([]byte) ([]byte, []byte, error)                          { return nil, nil, nil }
+func (t *fakeTPM) unseal(privateBlob []byte, publicBlob []byte) ([]byte, error) { return nil, nil }
+func (t *fakeTPM) flush(h tpmutil.Handle)                                       { delete(t.loaded, h) }
+func (t *fakeTPM) close() error                                                 { return nil }
 
 func TestTPMAttest(t *testing.T) {
 	pk, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -141,4 +146,34 @@ func TestTPMAttest(t *testing.T) {
 		dev.returnAIKCert = false
 		run(t, []string{"ATTESTATION DATA", "ATTESTATION SIGNATURE", "VM IDENTITY"})
 	})
+}
+
+func TestSealUnseal(t *testing.T) {
+	simulator, err := simulator.Get()
+	if err != nil {
+		t.Fatalf("Simulator initialization failed: %v", err)
+	}
+	defer simulator.Close()
+	tpm := &realTPM{simulator}
+
+	// Create a key, borrowed from cache_test.go
+	keyPEM, _ := genFakeKeyCert(t, time.Now(), time.Now().Add(24*time.Hour))
+
+	// Seal the key
+	privateBlob, publicBlob, err := tpm.seal(keyPEM)
+	if err != nil {
+		t.Fatalf("sealing failed: %v", err)
+	}
+	// Unseal the sealed key
+	unsealedKeyPEM, err := tpm.unseal(privateBlob, publicBlob)
+	if err != nil {
+		t.Fatalf("unsealing failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(unsealedKeyPEM, keyPEM) {
+		got := base64.StdEncoding.EncodeToString(unsealedKeyPEM)
+		want := base64.StdEncoding.EncodeToString(keyPEM)
+		t.Fatalf("unsealed key doesn't equal initial:\ngot:%s\nwant:%s", got, want)
+	}
+
 }
