@@ -51,6 +51,7 @@ go_test(
     embed = [":go_default_library"],
     deps = [
         "//pkg/nodeidentity:go_default_library",
+        "//vendor/github.com/google/go-tpm-tools/simulator:go_default_library",
         "//vendor/github.com/google/go-tpm/tpm2:go_default_library",
         "//vendor/github.com/google/go-tpm/tpmutil:go_default_library",
         "//vendor/k8s.io/client-go/rest:go_default_library",
