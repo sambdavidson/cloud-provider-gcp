@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/go-tpm-tools/simulator"
 )
 
 func TestGetKeyCert(t *testing.T) {
@@ -23,6 +25,14 @@ func TestGetKeyCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	simulator, err := simulator.Get()
+	if err != nil {
+		t.Fatalf("Simulator initialization failed: %v", err)
+	}
+	defer simulator.Close()
+
+	tpm := &realTPM{simulator}
 
 	validKey, validCert := genFakeKeyCert(t, time.Now(), time.Now().Add(24*time.Hour))
 	expiredKey, expiredCert := genFakeKeyCert(t, time.Now().Add(-24*time.Hour), time.Now().Add(-1*time.Hour))
@@ -41,15 +51,15 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "reuse existing key and cert",
 			writeFiles: map[string][]byte{
-				certFileName: validCert,
-				keyFileName:  validKey,
+				certFileName:      validCert,
+				sealedKeyFileName: sealKey(t, tpm, validKey),
 			},
 			wantKey:  validKey,
 			wantCert: validCert,
 		},
 		{
 			desc: "request new key and cert",
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return validCert, nil
 			},
 			wantCert: validCert,
@@ -57,10 +67,10 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "invalid existing cert",
 			writeFiles: map[string][]byte{
-				certFileName: []byte("invalid"),
-				keyFileName:  validKey,
+				certFileName:      []byte("invalid"),
+				sealedKeyFileName: sealKey(t, tpm, validKey),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return validCert, nil
 			},
 			wantCert: validCert,
@@ -68,10 +78,10 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "invalid existing key",
 			writeFiles: map[string][]byte{
-				certFileName: validCert,
-				keyFileName:  []byte("invalid"),
+				certFileName:      validCert,
+				sealedKeyFileName: sealKey(t, tpm, []byte("invalid")),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return almostExpiredCert, nil
 			},
 			wantCert: almostExpiredCert,
@@ -79,10 +89,10 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "expired existing cert",
 			writeFiles: map[string][]byte{
-				certFileName: expiredCert,
-				keyFileName:  expiredKey,
+				certFileName:      expiredCert,
+				sealedKeyFileName: sealKey(t, tpm, expiredKey),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return validCert, nil
 			},
 			wantCert: validCert,
@@ -90,10 +100,10 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "not yet valid existing cert",
 			writeFiles: map[string][]byte{
-				certFileName: futureCert,
-				keyFileName:  futureKey,
+				certFileName:      futureCert,
+				sealedKeyFileName: sealKey(t, tpm, futureKey),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return validCert, nil
 			},
 			wantCert: validCert,
@@ -101,10 +111,10 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "existing cert expiring soon rotated",
 			writeFiles: map[string][]byte{
-				certFileName: almostExpiredCert,
-				keyFileName:  almostExpiredKey,
+				certFileName:      almostExpiredCert,
+				sealedKeyFileName: sealKey(t, tpm, almostExpiredKey),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return validCert, nil
 			},
 			wantCert: validCert,
@@ -112,17 +122,17 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "existing cert past rotation threshold rotated",
 			writeFiles: map[string][]byte{
-				certFileName: oldCert,
-				keyFileName:  oldKey,
+				certFileName:      oldCert,
+				sealedKeyFileName: sealKey(t, tpm, oldKey),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return validCert, nil
 			},
 			wantCert: validCert,
 		},
 		{
 			desc: "request new cert failure",
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return nil, errors.New("foo")
 			},
 			wantErr: true,
@@ -130,9 +140,9 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "reuse existing temp key, request new cert",
 			writeFiles: map[string][]byte{
-				tmpKeyFileName: validKey,
+				tmpSealedKeyFileName: sealKey(t, tpm, validKey),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				if !bytes.Equal(keyPEM, validKey) {
 					return nil, fmt.Errorf("requestCert with key %q, expected %q", keyPEM, validKey)
 				}
@@ -144,10 +154,10 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "request new cert failure, reuse existing key and cert",
 			writeFiles: map[string][]byte{
-				certFileName: oldCert,
-				keyFileName:  oldKey,
+				certFileName:      oldCert,
+				sealedKeyFileName: sealKey(t, tpm, oldKey),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				return nil, errors.New("foo")
 			},
 			wantKey:  oldKey,
@@ -156,9 +166,9 @@ func TestGetKeyCert(t *testing.T) {
 		{
 			desc: "invalid existing temp key, request new cert",
 			writeFiles: map[string][]byte{
-				tmpKeyFileName: []byte("invalid"),
+				tmpSealedKeyFileName: sealKey(t, tpm, []byte("invalid")),
 			},
-			requestCert: func(keyPEM []byte) ([]byte, error) {
+			requestCert: func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 				if bytes.Equal(keyPEM, []byte("invalid")) {
 					return nil, fmt.Errorf("requestCert with key %q, expected new key", keyPEM)
 				}
@@ -184,17 +194,18 @@ func TestGetKeyCert(t *testing.T) {
 			var requestCert requestCertFn
 			var requestCertCalled bool
 			if tt.requestCert == nil {
-				requestCert = func(keyPEM []byte) ([]byte, error) {
+				requestCert = func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 					t.Error("requestCert is called, but test.requestCert was nil")
 					return nil, errors.New("failed")
 				}
 			} else {
-				requestCert = func(keyPEM []byte) ([]byte, error) {
+				requestCert = func(tpm tpmDevice, keyPEM []byte) ([]byte, error) {
 					requestCertCalled = true
-					return tt.requestCert(keyPEM)
+					return tt.requestCert(tpm, keyPEM)
 				}
 			}
-			gotKey, gotCert, err := getKeyCert(dir, requestCert)
+
+			gotKey, gotCert, err := (&cache{dir, requestCert, tpm}).keyCert()
 			switch {
 			case err == nil && tt.wantErr:
 				t.Fatal("error is nil, expected non-nil error")
@@ -224,12 +235,13 @@ func TestGetKeyCert(t *testing.T) {
 			}
 
 			// Check that key and cert got cached.
-			diskKey, err := ioutil.ReadFile(filepath.Join(dir, keyFileName))
+			diskKey, err := ioutil.ReadFile(filepath.Join(dir, sealedKeyFileName))
+			sealedGotKey := sealKey(t, tpm, gotKey)
 			if err != nil {
 				t.Fatalf("reading cached key: %v", err)
 			}
-			if !bytes.Equal(diskKey, gotKey) {
-				t.Errorf("got key on disk:\n%q\nwant:\n%q", diskKey, gotKey)
+			if !bytes.Equal(diskKey, sealedGotKey) {
+				t.Errorf("got sealed key on disk:\n%q\nwant:\n%q", diskKey, sealedGotKey)
 			}
 			diskCert, err := ioutil.ReadFile(filepath.Join(dir, certFileName))
 			if err != nil {
@@ -242,7 +254,21 @@ func TestGetKeyCert(t *testing.T) {
 	}
 }
 
+func sealKey(t *testing.T, tpm tpmDevice, keyPEM []byte) []byte {
+	t.Helper()
+	privateBlob, publicBlob, err := tpm.seal(keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedKeyPEM, err := pemEncodeSealedData(privateBlob, publicBlob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sealedKeyPEM
+}
+
 func genFakeKeyCert(t *testing.T, validFrom, validTo time.Time) ([]byte, []byte) {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)

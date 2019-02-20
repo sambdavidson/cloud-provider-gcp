@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"k8s.io/klog"
 	apicertificates "k8s.io/api/certificates/v1beta1"
 	certificates "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/cert"
 	"k8s.io/client-go/util/certificate/csr"
+	"k8s.io/klog"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 	caFilePath = "/etc/srv/kubernetes/pki/ca-certificates.crt"
 )
 
-func requestCertificate(privateKey []byte) ([]byte, error) {
+func requestCertificate(tpm tpmDevice, privateKey []byte) ([]byte, error) {
 	kubeEnv, err := metadata.Get(kubeEnvMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch kube-env: %v", err)
@@ -46,7 +46,7 @@ func requestCertificate(privateKey []byte) ([]byte, error) {
 		return nil, fmt.Errorf("unable to determine hostnamename: %v", err)
 	}
 
-	return processCSR(client.CertificateSigningRequests(), privateKey, hostname)
+	return processCSR(tpm, client.CertificateSigningRequests(), privateKey, hostname)
 }
 
 func kubeEnvToConfig(kubeEnv string) (*rest.Config, error) {
@@ -93,7 +93,7 @@ func kubeEnvToConfig(kubeEnv string) (*rest.Config, error) {
 // status, once approved by API server, it will return the API server's issued
 // certificate (pem-encoded). If there is any errors, or the watch timeouts, it
 // will return an error.
-func processCSR(client certificates.CertificateSigningRequestInterface, privateKeyData []byte, hostname string) ([]byte, error) {
+func processCSR(tpm tpmDevice, client certificates.CertificateSigningRequestInterface, privateKeyData []byte, hostname string) ([]byte, error) {
 	subject := &pkix.Name{
 		Organization: []string{"system:nodes"},
 		CommonName:   "system:node:" + hostname,
@@ -109,11 +109,6 @@ func processCSR(client certificates.CertificateSigningRequestInterface, privateK
 	}
 	klog.Info("CSR generated")
 
-	tpm, err := openTPM(*tpmPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed opening TPM device: %v", err)
-	}
-	defer tpm.close()
 	attestData, err := tpmAttest(tpm, privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("unable to add TPM attestation: %v", err)
