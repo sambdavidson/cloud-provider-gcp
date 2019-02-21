@@ -32,7 +32,7 @@ import (
 var OpenTPM = tpmutil.OpenTPM
 
 // GetRandom gets random bytes from the TPM.
-func GetRandom(rw io.ReadWriteCloser, size uint16) ([]byte, error) {
+func GetRandom(rw io.ReadWriter, size uint16) ([]byte, error) {
 	resp, err := runCommand(rw, TagNoSessions, cmdGetRandom, size)
 	if err != nil {
 		return nil, err
@@ -692,7 +692,7 @@ func PolicyPCR(rw io.ReadWriter, session tpmutil.Handle, expectedDigest []byte, 
 	if err != nil {
 		return err
 	}
-	_, err = runCommand(rw, TagNoSessions, cmdPolicyPCR, tpmutil.RawBytes(cmd))
+	_, err = runCommand(rw, TagNoSessions, CmdPolicyPCR, tpmutil.RawBytes(cmd))
 	return err
 }
 
@@ -1332,10 +1332,7 @@ func runCommand(rw io.ReadWriter, tag tpmutil.Tag, cmd tpmutil.Command, in ...in
 	if err != nil {
 		return nil, err
 	}
-	if code != tpmutil.RCSuccess {
-		return nil, fmt.Errorf("response status 0x%x", code)
-	}
-	return resp, nil
+	return resp, decodeResponse(code)
 }
 
 // concat is a helper for encoding functions that separately encode handle,
@@ -1373,7 +1370,7 @@ func PCRExtend(rw io.ReadWriter, pcr tpmutil.Handle, hashAlg Algorithm, hash []b
 }
 
 // ReadPCR reads the value of the given PCR.
-func ReadPCR(rw io.ReadWriteCloser, pcr int, hashAlg Algorithm) ([]byte, error) {
+func ReadPCR(rw io.ReadWriter, pcr int, hashAlg Algorithm) ([]byte, error) {
 	pcrSelection := PCRSelection{
 		Hash: hashAlg,
 		PCRs: []int{pcr},

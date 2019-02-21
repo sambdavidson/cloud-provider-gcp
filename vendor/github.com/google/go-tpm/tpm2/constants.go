@@ -80,6 +80,22 @@ const (
 	AlgECB       Algorithm = 0x0044
 )
 
+// HandleType defines a type of handle.
+type HandleType uint8
+
+// Supported handle types
+const (
+	HandleTypePCR           HandleType = 0x00
+	HandleTypeNVIndex       HandleType = 0x01
+	HandleTypeHMACSession   HandleType = 0x02
+	HandleTypeLoadedSession HandleType = 0x02
+	HandleTypePolicySession HandleType = 0x03
+	HandleTypeSavedSession  HandleType = 0x03
+	HandleTypePermanent     HandleType = 0x40
+	HandleTypeTransient     HandleType = 0x80
+	HandleTypePersistent    HandleType = 0x81
+)
+
 // SessionType defines the type of session created in StartAuthSession.
 type SessionType uint8
 
@@ -135,7 +151,20 @@ type TPMProp uint32
 
 // TPM Capability Properties.
 const (
-	NVMaxBufferSize TPMProp = 0x100 + 44
+	NVMaxBufferSize    TPMProp = 0x100 + 44
+	PCRFirst           TPMProp = 0x00000000
+	HMACSessionFirst   TPMProp = 0x02000000
+	LoadedSessionFirst TPMProp = 0x02000000
+	PolicySessionFirst TPMProp = 0x03000000
+	ActiveSessionFirst TPMProp = 0x03000000
+	TransientFirst     TPMProp = 0x80000000
+	PersistentFirst    TPMProp = 0x81000000
+	PersistentLast     TPMProp = 0x81FFFFFF
+	PlatformPersistent TPMProp = 0x81800000
+	NVIndexFirst       TPMProp = 0x01000000
+	NVIndexLast        TPMProp = 0x01FFFFFF
+	PermanentFirst     TPMProp = 0x40000000
+	PermanentLast      TPMProp = 0x4000010F
 )
 
 // Reserved Handles.
@@ -255,11 +284,13 @@ const (
 	cmdGetRandom        tpmutil.Command = 0x0000017B
 	cmdHash             tpmutil.Command = 0x0000017D
 	cmdPCRRead          tpmutil.Command = 0x0000017E
-	cmdPolicyPCR        tpmutil.Command = 0x0000017F
-	cmdReadClock        tpmutil.Command = 0x00000181
-	cmdPCRExtend        tpmutil.Command = 0x00000182
-	cmdPolicyGetDigest  tpmutil.Command = 0x00000189
-	cmdPolicyPassword   tpmutil.Command = 0x0000018C
+	// CmdPolicyPCR is the command code for TPM2_PolicyPCR.
+	// It's exported for computing AuthPolicy values for PCR-based sessions.
+	CmdPolicyPCR       tpmutil.Command = 0x0000017F
+	cmdReadClock       tpmutil.Command = 0x00000181
+	cmdPCRExtend       tpmutil.Command = 0x00000182
+	cmdPolicyGetDigest tpmutil.Command = 0x00000189
+	cmdPolicyPassword  tpmutil.Command = 0x0000018C
 )
 
 // Regular TPM 2.0 devices use 24-bit mask (3 bytes) for PCR selection.
