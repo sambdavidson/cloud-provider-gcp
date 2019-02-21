@@ -58,8 +58,8 @@ github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c/go.mod h1:lNA+9X1NB3Z
 github.com/google/go-cmp v0.2.0/go.mod h1:oXzfMopK8JAjlY9xF4vHSVASa0yLyX7SntLO5aqRK0M=
 github.com/google/go-github v17.0.0+incompatible/go.mod h1:zLgOLi98H3fifZn+44m+umXrS52loVEgC2AApnigrVQ=
 github.com/google/go-querystring v1.0.0/go.mod h1:odCYkC5MyYFN7vkCjXpyrEuKhc/BUO6wN/zVPAxq5ck=
-github.com/google/go-tpm v0.1.0 h1:fJdlawx1sgeNE2eMX31RFAO/ALa0f3pWEYJvqS/9XZg=
-github.com/google/go-tpm v0.1.0/go.mod h1:OGEdc1XfzTyNEQyahgeXVq+E0lMq3Vu/Y3bT9EfpRnE=
+github.com/google/go-tpm v0.1.1 h1:Qwvy1ZQsQElHIb/7PCqE4OpiBwDRMMHpu2a2q16S2hI=
+github.com/google/go-tpm v0.1.1/go.mod h1:OGEdc1XfzTyNEQyahgeXVq+E0lMq3Vu/Y3bT9EfpRnE=
 github.com/google/go-tpm-tools v0.0.0-20190131232102-89d1c95730e5 h1:ZP7wPiscXdeco0DkjnSLxwTksyFLG+w/sVFYZHh1sLQ=
 github.com/google/go-tpm-tools v0.0.0-20190131232102-89d1c95730e5/go.mod h1:ApmLTU8fd5JJJ4J67y9sV16nOTR00GW2OabMwk7kSnE=
 github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf h1:+RRA9JqSOZFfKrOeqr2z77+8R2RKyh8PG66dcu1V0ck=

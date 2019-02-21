@@ -12,7 +12,7 @@ require (
 	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/gogo/protobuf v1.2.0 // indirect
 	github.com/golang/groupcache v0.0.0-20181024230925-c65c006176ff // indirect
-	github.com/google/go-tpm v0.1.0
+	github.com/google/go-tpm v0.1.1
 	github.com/google/go-tpm-tools v0.0.0-20190131232102-89d1c95730e5
 	github.com/google/gofuzz v0.0.0-20170612174753-24818f796faf // indirect
 	github.com/googleapis/gnostic v0.2.0 // indirect
